@@ -1,74 +1,176 @@
 <?xml version="1.0"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd ">
+<project
+    xmlns="http://maven.apache.org/POM/4.0.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd ">
     <modelVersion>4.0.0</modelVersion>
-    <groupId>qabuild</groupId>
-    <artifactId>example-maven-rpm</artifactId>
-    <version>1.0</version>
+    <groupId>com.amtrustna.it.infr.serv</groupId>
+    <artifactId>nexus-oss-rpm</artifactId>
+    <version>3.1.0-04</version>
     <packaging>rpm</packaging>
-    <name>Example-Maven-RPM</name>
-    <description>Example Maven RPM</description>
-    <build>
-        <plugins>
-            <plugin>
-                <groupId>org.codehaus.mojo</groupId>
-                <artifactId>rpm-maven-plugin</artifactId>
-                <version>2.1.3</version>
-                <extensions>true</extensions>
-                <executions>
-                    <execution>
-                        <id>generate-rpm</id>
-                        <goals>
-                            <goal>rpm</goal>
-                        </goals>
-                    </execution>
-                </executions>
-
-                <configuration>
-                    <distribution>el6</distribution>
-                    <group>Application/Systems</group>
-
-                   <!--
-                    <mappings>
-                        -->
-
-                        <!-- Manually Specifying Package Contents
-                        <mapping>
-                            <directory>/opt/example/</directory>
-                            <sources>
-                                <source>
-                                    <location>target/example</location>
-                                </source>
-                            </sources>
-                        </mapping>
-                         -->
-
-                        <!--
-                    </mappings>
-                    -->
-
-                    <!-- Inline Shell Script -->
-                      <preinstallScriptlet>
-                        <script>echo "PreInstall Script"</script>
-                       </preinstallScriptlet>
-
-                    <!-- Included Shell Script -->
-                        <postinstallScriptlet>
-                          <scriptFile>src/main/scripts/postinstall</scriptFile>
-                          <fileEncoding>utf-8</fileEncoding>
-                        </postinstallScriptlet>
-
-                        <preremoveScriptlet>
-                          <scriptFile>src/main/scripts/preremove</scriptFile>
-                          <fileEncoding>utf-8</fileEncoding>
-                        </preremoveScriptlet>
-                                
-
-                </configuration>
-                
-            </plugin>
-        </plugins>
-    </build>
+    <name>Nexus OSS RPM</name>
+    <description>Nexus OSS RPM</description>
     <properties>
+        <nexus-bundle-base-url>https://sonatype-download.global.ssl.fastly.net/nexus/3/</nexus-bundle-base-url>
+        <version.nexus>3.1.0-04</version.nexus>
+        <nexus.download.md5>3b436f62aa8b4cc0f29be40dc6d7d942</nexus.download.md5>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
+
+<build>
+    <plugins>
+        <plugin>
+            <!-- This is used to download nexus itself-->
+            <groupId>com.googlecode.maven-download-plugin</groupId>
+            <artifactId>download-maven-plugin</artifactId>
+            <version>1.2.1</version>
+            <executions>
+                <execution>
+                    <id>download-nexus-oss</id>
+                    <phase>validate</phase>
+                    <goals>
+                        <goal>wget</goal>
+                    </goals>
+                    <configuration>
+                        <url>${nexus-bundle-base-url}/nexus-${version.nexus}-unix.tar.gz</url>
+                        <unpack>true</unpack>
+                        <outputDirectory>${project.build.directory}/nexus</outputDirectory>
+                        <md5>${nexus.download.md5}</md5>
+                    </configuration>
+                </execution>
+            </executions>
+        </plugin>
+
+<plugin>
+    <artifactId>maven-antrun-plugin</artifactId>
+    <version>1.8</version>
+    <executions>
+        <execution>
+            <id>filter_files</id>
+            <phase>process-resources</phase>
+            <configuration>
+                <target>
+                    <loadfile property="serviceHeader" srcFile="${project.build.outputDirectory}/serviceHeader"/>
+                    <!-- Adds the service header -->
+                    <replaceregexp match="#! /bin/sh" replace="${serviceHeader}" flags="g" byline="true">
+                        <fileset dir="${project.build.directory}/nexus/nexus-${version.nexus}/bin" includes="nexus"/>
+                    </replaceregexp>
+                    <!-- Set the nexus run file to /var/run -->
+                    <replaceregexp match="#PIDDIR=.*" replace="PIDDIR=/var/run/nexus" flags="g" byline="true">
+                        <fileset dir="${project.build.directory}/nexus/nexus-${version.nexus}/bin" includes="nexus"/>
+                    </replaceregexp>
+                    <!-- Run as user nexus -->
+                    <replaceregexp match="#RUN_AS_USER=" replace="RUN_AS_USER=nexus" flags="g" byline="true">
+                        <fileset dir="${project.build.directory}/nexus/nexus-${version.nexus}/bin" includes="nexus"/>
+                    </replaceregexp>
+                    <!-- Set the nexus work to /var/lib/nexus -->
+                    <replaceregexp match="nexus-work=.*" replace="nexus-work=/var/lib/nexus/" flags="g" byline="true">
+                        <fileset dir="${project.build.directory}/nexus/nexus-${version.nexus}/conf" includes="nexus.properties"/>
+                    </replaceregexp>
+                    <!-- Set the nexus log file to /var/log/nexus -->
+                    <replaceregexp match="wrapper.logfile=.*" replace="wrapper.logfile=/var/log/nexus/nexus.log" flags="g" byline="true">
+                        <fileset dir="${project.build.directory}/nexus/nexus-${version.nexus}/bin/jsw/conf" includes="wrapper.conf"/>
+                    </replaceregexp>
+                </target>
+            </configuration>
+            <goals>
+                <goal>run</goal>
+            </goals>
+        </execution>
+    </executions>
+</plugin>
+
+
+<plugin>
+    <groupId>org.codehaus.mojo</groupId>
+    <artifactId>rpm-maven-plugin</artifactId>
+    <version>2.1.3</version>
+    <extensions>true</extensions>
+    <executions>
+        <execution>
+            <id>generate-rpm</id>
+            <goals>
+                <goal>rpm</goal>
+            </goals>
+        </execution>
+    </executions>
+    <configuration>
+        <copyright>Eclipse Public License Version 1.0</copyright>
+        <distribution>el7</distribution>
+        <group>Application/Systems</group>
+        <packager>J.M. Becker</packager>
+        <defaultDirmode>750</defaultDirmode>
+        <defaultFilemode>640</defaultFilemode>
+        <defaultUsername>nexus</defaultUsername>
+        <defaultGroupname>nexus</defaultGroupname>
+        <autoProvides>false</autoProvides>
+        <autoRequires>false</autoRequires>
+        <mappings>
+            <mapping>
+                <directory>/usr/share/nexus</directory>
+                <sources>
+                    <source>
+                        <location>${project.build.directory}/nexus/nexus-${version.nexus}</location>
+                    </source>
+                </sources>
+            </mapping>
+            <mapping>
+                <directory>/usr/share/nexus/bin</directory>
+                <filemode>755</filemode>
+                <sources>
+                    <source>
+                        <location>${project.build.directory}/nexus/nexus-${version.nexus}/bin</location>
+                    </source>
+                </sources>
+            </mapping>
+            <mapping>
+                <directory>/etc/rc.d/init.d</directory>
+                <username>root</username>
+                <groupname>root</groupname>
+                <sources>
+                    <softlinkSource>
+                        <location>/usr/share/nexus/bin/nexus</location>
+                    </softlinkSource>
+                </sources>
+            </mapping>
+            <mapping>
+                <directory>/etc</directory>
+                <sources>
+                    <softlinkSource>
+                        <destination>nexus</destination>
+                        <location>/usr/share/nexus/conf</location>
+                    </softlinkSource>
+                </sources>
+            </mapping>
+            <mapping>
+                <directoryIncluded>true</directoryIncluded>
+                <directory>/var/lib/nexus</directory>
+            </mapping>
+            <mapping>
+                <directoryIncluded>true</directoryIncluded>
+                <directory>/var/log/nexus</directory>
+            </mapping>
+            <mapping>
+                <directoryIncluded>true</directoryIncluded>
+                <directory>/var/run/nexus</directory>
+            </mapping>
+        </mappings>
+          <!-- TODO: change login to /sbin/nologin-->
+          <preinstallScriptlet>
+            <script>
+              groupadd -f -r nexus
+              getent passwd nexus >/dev/null || \
+              useradd -r -g nexus -d /usr/share/nexus -s /bin/sh -c "Nexus OSS" nexus
+            </script>
+          </preinstallScriptlet>
+          <postinstallScriptlet>
+            <script>service nexus start</script>
+          </postinstallScriptlet>
+          <preremoveScriptlet>
+            <script>service nexus stop</script>
+          </preremoveScriptlet>
+        </configuration>
+      </plugin>
+
+    </plugins>
+    </build>
 </project>
