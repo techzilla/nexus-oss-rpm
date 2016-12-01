@@ -5,19 +5,55 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>com.amtrustna.it.infr.serv</groupId>
     <artifactId>nexus-oss-rpm</artifactId>
-    <version>3.1.0-04</version>
+    <version>3.2.1-01</version>
     <packaging>rpm</packaging>
     <name>Nexus OSS RPM</name>
     <description>Nexus OSS RPM</description>
+
+
     <properties>
         <nexus-bundle-base-url>https://sonatype-download.global.ssl.fastly.net/nexus/3/</nexus-bundle-base-url>
-        <version.nexus>3.1.0-04</version.nexus>
-        <nexus.download.md5>3b436f62aa8b4cc0f29be40dc6d7d942</nexus.download.md5>
+        <version.nexus>${project.version}</version.nexus>
+        <nexus.download.md5>1dddcb9fbe98374ed6aa2a81ad5b1064</nexus.download.md5>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
     </properties>
+
+<!-- Binary Repository Configuration -->
+  <distributionManagement>
+    <repository>
+      <id>maven-releases</id>
+      <url>https://dev-repobuild02.amtrustservices.com/content/repositories/maven-releases</url>
+    </repository>
+    <snapshotRepository>
+      <id>maven-snapshots</id>
+      <url>https://dev-repobuild02.amtrustservices.com/content/repositories/maven-snapshots</url>
+    </snapshotRepository>
+  </distributionManagement>
 
 <build>
     <plugins>
+
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-dependency-plugin</artifactId>
+        <configuration>
+          <includeTypes>tar.gz</includeTypes>
+          <excludeTransitive>true</excludeTransitive>
+          <outputDirectory>${dependencyDir}</outputDirectory>
+          <useSubDirectoryPerArtifact>true</useSubDirectoryPerArtifact>
+          <stripVersion>true</stripVersion>
+        </configuration>
+        <executions>
+          <execution>
+            <id>unpack</id>
+            <phase>initialize</phase>
+            <goals>
+              <goal>unpack-dependencies</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
         <plugin>
             <!-- This is used to download nexus itself-->
             <groupId>com.googlecode.maven-download-plugin</groupId>
@@ -32,8 +68,8 @@
                     </goals>
                     <configuration>
                         <url>${nexus-bundle-base-url}/nexus-${version.nexus}-unix.tar.gz</url>
-                        <unpack>true</unpack>
-                        <outputDirectory>${project.build.directory}/nexus</outputDirectory>
+                        <unpack>false</unpack>
+                        <outputDirectory>${project.build.directory}</outputDirectory>
                         <md5>${nexus.download.md5}</md5>
                     </configuration>
                 </execution>
@@ -49,26 +85,17 @@
             <phase>process-resources</phase>
             <configuration>
                 <target>
-                    <loadfile property="serviceHeader" srcFile="${project.build.outputDirectory}/serviceHeader"/>
-                    <!-- Adds the service header -->
-                    <replaceregexp match="#! /bin/sh" replace="${serviceHeader}" flags="g" byline="true">
-                        <fileset dir="${project.build.directory}/nexus/nexus-${version.nexus}/bin" includes="nexus"/>
+                    <!-- Unpack Work Around -->
+                    <untar src="${project.build.directory}/nexus-${version.nexus}-unix.tar.gz" dest="${project.build.directory}/nexus" compression="gzip"/>
+                    <!-- Service -->
+                    <copy file="${project.build.outputDirectory}/nexus.service" tofile="${project.build.directory}/nexus/nexus-${version.nexus}/bin/nexus.service"/>
+                    <!-- RunUser -->
+                    <replaceregexp match="#run_as_user=&quot;&quot;" replace="run_as_user=&quot;nexus&quot;" flags="g" byline="true">
+                        <fileset dir="${project.build.directory}/nexus/nexus-${version.nexus}/bin" includes="nexus.rc"/>
                     </replaceregexp>
-                    <!-- Set the nexus run file to /var/run -->
-                    <replaceregexp match="#PIDDIR=.*" replace="PIDDIR=/var/run/nexus" flags="g" byline="true">
-                        <fileset dir="${project.build.directory}/nexus/nexus-${version.nexus}/bin" includes="nexus"/>
-                    </replaceregexp>
-                    <!-- Run as user nexus -->
-                    <replaceregexp match="#RUN_AS_USER=" replace="RUN_AS_USER=nexus" flags="g" byline="true">
-                        <fileset dir="${project.build.directory}/nexus/nexus-${version.nexus}/bin" includes="nexus"/>
-                    </replaceregexp>
-                    <!-- Set the nexus work to /var/lib/nexus -->
-                    <replaceregexp match="nexus-work=.*" replace="nexus-work=/var/lib/nexus/" flags="g" byline="true">
-                        <fileset dir="${project.build.directory}/nexus/nexus-${version.nexus}/conf" includes="nexus.properties"/>
-                    </replaceregexp>
-                    <!-- Set the nexus log file to /var/log/nexus -->
-                    <replaceregexp match="wrapper.logfile=.*" replace="wrapper.logfile=/var/log/nexus/nexus.log" flags="g" byline="true">
-                        <fileset dir="${project.build.directory}/nexus/nexus-${version.nexus}/bin/jsw/conf" includes="wrapper.conf"/>
+                    <!-- Bind Address -->
+                    <replaceregexp match="application-host=0.0.0.0" replace="application-host=127.0.0.1" flags="g" byline="true">
+                        <fileset dir="${project.build.directory}/nexus/nexus-${version.nexus}/etc" includes="nexus-default.properties"/>
                     </replaceregexp>
                 </target>
             </configuration>
@@ -98,15 +125,15 @@
         <distribution>el7</distribution>
         <group>Application/Systems</group>
         <packager>J.M. Becker</packager>
-        <defaultDirmode>750</defaultDirmode>
-        <defaultFilemode>640</defaultFilemode>
+        <defaultDirmode>755</defaultDirmode>
+        <defaultFilemode>644</defaultFilemode>
         <defaultUsername>nexus</defaultUsername>
         <defaultGroupname>nexus</defaultGroupname>
         <autoProvides>false</autoProvides>
         <autoRequires>false</autoRequires>
         <mappings>
             <mapping>
-                <directory>/usr/share/nexus</directory>
+                <directory>/var/lib/nexus</directory>
                 <sources>
                     <source>
                         <location>${project.build.directory}/nexus/nexus-${version.nexus}</location>
@@ -114,59 +141,47 @@
                 </sources>
             </mapping>
             <mapping>
-                <directory>/usr/share/nexus/bin</directory>
-                <filemode>755</filemode>
+              <directory>/var/lib/nexus/bin</directory>
+              <filemode>755</filemode>
+              <sources>
+                <source>
+                  <location>${project.build.directory}/nexus/nexus-${version.nexus}/bin</location>
+                </source>
+              </sources>
+            </mapping>
+            <mapping>
+                <directory>/var/lib/sonatype-work</directory>
                 <sources>
                     <source>
-                        <location>${project.build.directory}/nexus/nexus-${version.nexus}/bin</location>
+                        <location>${project.build.directory}/nexus/sonatype-work</location>
                     </source>
                 </sources>
-            </mapping>
-            <mapping>
-                <directory>/etc/rc.d/init.d</directory>
-                <username>root</username>
-                <groupname>root</groupname>
-                <sources>
-                    <softlinkSource>
-                        <location>/usr/share/nexus/bin/nexus</location>
-                    </softlinkSource>
-                </sources>
-            </mapping>
-            <mapping>
-                <directory>/etc</directory>
-                <sources>
-                    <softlinkSource>
-                        <destination>nexus</destination>
-                        <location>/usr/share/nexus/conf</location>
-                    </softlinkSource>
-                </sources>
-            </mapping>
-            <mapping>
-                <directoryIncluded>true</directoryIncluded>
-                <directory>/var/lib/nexus</directory>
-            </mapping>
-            <mapping>
-                <directoryIncluded>true</directoryIncluded>
-                <directory>/var/log/nexus</directory>
-            </mapping>
-            <mapping>
-                <directoryIncluded>true</directoryIncluded>
-                <directory>/var/run/nexus</directory>
             </mapping>
         </mappings>
           <!-- TODO: change login to /sbin/nologin-->
           <preinstallScriptlet>
             <script>
+              getent group nexus >/dev/null || \
               groupadd -f -r nexus
               getent passwd nexus >/dev/null || \
-              useradd -r -g nexus -d /usr/share/nexus -s /bin/sh -c "Nexus OSS" nexus
+              useradd -r -g nexus -d /var/lib/nexus -s /bin/sh -c "Nexus OSS" nexus
             </script>
           </preinstallScriptlet>
           <postinstallScriptlet>
-            <script>service nexus start</script>
+            <script>
+              cp /var/lib/nexus/bin/nexus.service /etc/systemd/system/
+              systemctl daemon-reload
+              systemctl enable nexus.service
+              systemctl start nexus.service
+              </script>
           </postinstallScriptlet>
           <preremoveScriptlet>
-            <script>service nexus stop</script>
+            <script>
+             systemctl stop nexus.service
+             systemctl disable nexus.service
+             rm -f /etc/systemd/system/nexus.service
+             systemctl daemon-reload
+            </script>
           </preremoveScriptlet>
         </configuration>
       </plugin>
